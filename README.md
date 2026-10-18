@@ -1,6 +1,6 @@
 # Pseudo Character Driver (pcd)
 
-A simple Linux character driver that I am building while learning from the LDD1 course (FastBit Embedded Brain Academy).
+A simple Linux character driver
 
 The "hardware" is a 512-byte memory area in kernel RAM, so no real device is needed.
 
