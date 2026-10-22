@@ -1,12 +1,13 @@
-
 #include<linux/module.h>
 #include <linux/cdev.h>   // struct cdev, cdev_init, cdev_add
 #include <linux/fs.h>     // struct file_operations
 #include <linux/device.h>
 #include <linux/kdev_t.h>
+#include <linux/uaccess.h>
 
 #define DEV_MEM_SIZE 512
 
+char device_buffer[DEV_MEM_SIZE];
 struct cdev pcd_cdev;               // one per device
 
 #undef pr_fmt
@@ -14,19 +15,96 @@ struct cdev pcd_cdev;               // one per device
 
 loff_t pcd_lseek (struct file *flip, loff_t off, int whence)
 {
+  loff_t temp;
   pr_info("lseek requested \n");
-  return 0;
+  pr_info("current file position:%lld\n", flip->f_pos);
+
+  switch (whence){
+    
+    case SEEK_SET:
+      
+      if((off > DEV_MEM_SIZE) || (off < 0)){
+        return -EINVAL;
+      }
+      flip -> f_pos = off;
+      break;
+    
+    case SEEK_CUR:
+     
+      temp = flip->f_pos + off;
+      if ((temp > DEV_MEM_SIZE) || (temp < 0)){
+        return -EINVAL;
+      }
+      flip -> f_pos += off;
+      break;
+
+    case SEEK_END:
+      
+      temp = DEV_MEM_SIZE + off;
+      if((temp > DEV_MEM_SIZE) || (temp < 0)){
+        return -EINVAL;
+      }
+      flip -> f_pos = DEV_MEM_SIZE + off;
+      
+      break;
+    
+    default:
+      return -EINVAL;  /* Invalid Whence */
+  }
+  return flip->f_pos; /* Returns the new file position*/
 }
-ssize_t pcd_write (struct file *flip, const char __user *Buff, size_t count, loff_t *f_pos)
+ssize_t pcd_write (struct file *flip, const char __user *buff, size_t count, loff_t *f_pos)
 {
   pr_info("write request for %zu bytes\n", count);
-  return 0; 
+  pr_info("Current file position: %lld\n", *f_pos);
+
+  /* Check n' adjust count */
+  if((*f_pos + count) > DEV_MEM_SIZE){
+    count = DEV_MEM_SIZE - *f_pos;
+  }
+
+  /* special case for no write */
+  if(!count){
+    return -ENOMEM;
+  }
+
+  /* Copy count to kernel */
+  if(copy_from_user(&device_buffer[*f_pos], buff, count)){
+    return -EFAULT;       /* If copy_from_user throws non zero that means error i.e throws EFAULT */
+  }
+
+  /* update f_pos */
+  *f_pos += count;
+
+  pr_info("Number of bytes succesfully written: %zu\n", count);
+  pr_info("Latest file position: %lld\n", *f_pos);
+
+  /* Return the number of bytes that have been written */
+  return count; 
 }
 
-ssize_t pcd_read (struct file *flip, char __user *Buff, size_t count, loff_t *f_pos)
+ssize_t pcd_read (struct file *flip, char __user *buff, size_t count, loff_t *f_pos)
 {
   pr_info("read request for %zu bytes\n", count);
-  return 0;
+
+  /* Check n' adjust count */
+  if((*f_pos + count) > DEV_MEM_SIZE){
+    count = DEV_MEM_SIZE - *f_pos;
+  }
+
+  /* Copy count to user */
+  if(copy_to_user(buff, &device_buffer[*f_pos], count)){
+    return -EFAULT;       /* If copy_to_user throws non zero that means error i.e throws EFAULT */
+  }
+
+  /* update f_pos */
+  *f_pos += count;
+
+  pr_info("Number of bytes succesfully read: %zu\n", count);
+  pr_info("Latest file position: %lld\n", *f_pos);
+
+  /* Return the number of bytes that have been read */
+  return count;
 }
 
 int pcd_open(struct inode *inode, struct file *flip)
@@ -44,8 +122,6 @@ int pcd_release(struct inode *inode, struct file *flip)
 struct class *class_pcd;
 struct device *device_pcd;
 
-// Pseudo device's memory
-char device_buffer[DEV_MEM_SIZE];
 
 dev_t device_number;
 
