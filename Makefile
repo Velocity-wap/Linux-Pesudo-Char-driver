@@ -1,4 +1,4 @@
-obj-m := pcd.o
+obj-m := pcd_n.o
 
 KERN_DIR = /lib/modules/$(shell uname -r)/build
 
